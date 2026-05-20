@@ -109,6 +109,15 @@ solucio_pips(Regions, Pieces, Solution) :-
 
 /*******************************************************/
 
+test_fails(Difficulty) :-
+    puzzle(_, Difficulty, Regions, Pieces, Solution),
+    not(solucio_pips(Regions, Pieces, Solution)).
+
+test_all :- not(test_fails(_)).
+test_easy :- not(test_fails(easy)).
+test_medium :- not(test_fails(medium)).
+test_hard :- not(test_fails(hard)).
+
 puzzle(20250818, easy,
   [region(empty, nil, [[0,0]]),
    region(equals, nil, [[0,1],[0,2],[1,1],[1,2]]),
