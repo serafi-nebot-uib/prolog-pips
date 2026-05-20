@@ -1,157 +1,111 @@
-% no_constraint(+Values)
-% True for any list of values. Represents an empty region restriction.
-no_constraint(_).
+/*
+Pips solver.
+
+Main predicate:
+  solucio_pips(+Regions, +Pieces, ?Solution)
+
+Regions is the list of region(Type, Target, Coords) terms that defines the
+board and its constraints. Pieces is the ordered list of domino pieces. Solution
+is the ordered list of coordinate pairs where each piece is placed. The nth
+entry in Solution corresponds to the nth entry in Pieces.
+
+Example checks a stored solution:
+  ?- puzzle(20250818, easy, Regions, Pieces, Solution),
+     solucio_pips(Regions, Pieces, Solution).
+
+Example generates a solution:
+  ?- puzzle(20250818, easy, Regions, Pieces, _),
+     solucio_pips(Regions, Pieces, Solution).
+*/
+
+% list_append(+List1, +List2, -Result)
+% Result is List1 followed by List2. Used to build the board coordinate list.
+list_append([], L, L).
+list_append([X | Xs], Ys, [X | Zs]) :- list_append(Xs, Ys, Zs).
+
+% list_contains(?Element, +List)
+% True when Element can be unified with an element of List.
+list_contains(X, [X | _]).
+list_contains(X, [_ | L]) :- list_contains(X, L).
 
 % all_equal_values(+Values)
-% True when all values in Values are equal.
+% True when all numbers in Values are equal. Empty and one-cell regions pass.
 all_equal_values([]).
 all_equal_values([_]).
 all_equal_values([X, X | L]) :- all_equal_values([X | L]).
 
-% list_contains(?Element, +List)
-% True when Element appears in List.
-list_contains(X, [X | _]).
-list_contains(X, [_ | L]) :- list_contains(X, L).
-
 % all_distinct_values(+Values)
-% True when all values in Values are pairwise different.
+% True when no number appears twice in Values.
 all_distinct_values([]).
 all_distinct_values([_]).
 all_distinct_values([X | L]) :- not(list_contains(X, L)), all_distinct_values(L).
 
 % sum_values(+Values, ?Total)
-% True when Total is the arithmetic sum of all values in Values.
+% Total is the arithmetic sum of Values.
 sum_values([], 0).
-sum_values([X | L], Y) :- sum_values(L, Y2), Y is X + Y2.
-
-% values_sum_less_than(+Values, +Target)
-% True when the sum of Values is strictly less than Target.
-values_sum_less_than(L, Y) :- sum_values(L, S), S < Y.
-
-% values_sum_greater_than(+Values, +Target)
-% True when the sum of Values is strictly greater than Target.
-values_sum_greater_than(L, Y) :- sum_values(L, S), S > Y.
-
-% cell_coord(+Cell, -Coord)
-% Coord is the coordinate stored in Cell.
-cell_coord(cell(Coord, _), Coord).
-
-% cell_value(+Cell, -Value)
-% Value is the value stored in Cell.
-cell_value(cell(_, Value), Value).
-
-% cell_at(+Coord, +Cells, -Cell)
-% Cell is the cell in Cells located at Coord.
-cell_at(Coord, [cell(Coord, Value) | _], cell(Coord, Value)).
-cell_at(Coord, [_ | L], Cell) :- cell_at(Coord, L, Cell).
-
-% coordinate_in_cells(+Coord, +Cells)
-% True when there is a cell in Cells located at Coord.
-coordinate_in_cells(Coord, [cell(Coord, _) | _]).
-coordinate_in_cells(Coord, [_ | L]) :- coordinate_in_cells(Coord, L).
-
-% cells_overlap(+Cells)
-% True when at least two cells in Cells have the same coordinate.
-cells_overlap([cell(Coord, _) | L]) :- coordinate_in_cells(Coord, L).
-cells_overlap([_ | L]) :- cells_overlap(L).
+sum_values([X | L], Total) :- sum_values(L, RestTotal), Total is X + RestTotal.
 
 % adjacent_coords(+Coord1, +Coord2)
-% True when Coord1 and Coord2 are horizontally or vertically adjacent.
-adjacent_coords([X1, Y1], [X2, Y2]) :- 1 is abs(X1 - X2) + abs(Y1 - Y2).
+% True when Coord1 and Coord2 share one side on the board.
+adjacent_coords([Row1, Col1], [Row2, Col2]) :- 1 is abs(Row1 - Row2) + abs(Col1 - Col2).
 
-% cells_from_piece_placement(+Piece, +Position, -Cells)
-% Cells contains the two cells produced by placing Piece at Position.
-cells_from_piece_placement([V1, V2], [[X1, Y1], [X2, Y2]], [cell([X1, Y1], V1), cell([X2, Y2], V2)]) :-
-    adjacent_coords([X1, Y1], [X2, Y2]).
+% select_coord(?Coord, +Coords, -RemainingCoords)
+% Chooses Coord from Coords and removes that occurrence from RemainingCoords.
+select_coord(X, [X | L], L).
+select_coord(X, [Y | L], [Y | R]) :- select_coord(X, L, R).
 
-% values_at_coords(+Coords, +Cells, -Values)
-% Values are the values found in Cells at the coordinates in Coords.
-values_at_coords([], _, []).
-values_at_coords([Coord | CoordRest], Cells, [Value | ValueRest]) :-
-    cell_at(Coord, Cells, Cell),
-    cell_value(Cell, Value),
-    values_at_coords(CoordRest, Cells, ValueRest).
+% coords_from_regions(+Regions, -Coords)
+% Coords contains all board coordinates listed by the regions.
+coords_from_regions([], []).
+coords_from_regions([region(_, _, Coords) | RegionRest], BoardCoords) :-
+    coords_from_regions(RegionRest, RestCoords),
+    list_append(Coords, RestCoords, BoardCoords).
 
-/*******************************************************/
+% place_pieces(+Pieces, +FreeCoords, ?Solution, -Cells)
+% Places each piece on two unused adjacent coordinates.
+% Cells stores the value assigned to each occupied coordinate.
+place_pieces([], [], [], []).
+place_pieces([[V1, V2] | PieceRest], FreeCoords, [[C1, C2] | SolutionRest], [cell(C1, V1), cell(C2, V2) | CellRest]) :-
+    select_coord(C1, FreeCoords, FreeCoords1),
+    select_coord(C2, FreeCoords1, FreeCoords2),
+    adjacent_coords(C1, C2),
+    place_pieces(PieceRest, FreeCoords2, SolutionRest, CellRest).
 
-% region_contains_coord(+Coord, +Region)
-% True when Coord is one of the coordinates in Region.
-region_contains_coord(Coord, region(_, _, [Coord | _])).
-region_contains_coord(Coord, region(_, _, [_ | CoordRest])) :- region_contains_coord(Coord, region(_, _, CoordRest)).
-
-% cells_for_region(+Region, +Cells, -RegionCells)
-% RegionCells are the cells from Cells whose coordinates belong to Region.
-cells_for_region(region(_, _, []), _, []).
-cells_for_region(region(Type, Target, [Coord | CoordRest]), Cells, [C | CRest]) :-
-    cell_at(Coord, Cells, C),
-    cells_for_region(region(Type, Target, CoordRest), Cells, CRest).
-
-% values_from_cells(+Cells, -Values)
-% Values contains only the values stored in Cells, preserving order.
-values_from_cells([], []).
-values_from_cells([cell(_, Value) | Cells], [Value | Values]) :-
-    values_from_cells(Cells, Values).
-
-% cells_satisfy_constraint(+Cells, +Type, +Target)
-% True when the values in Cells satisfy the region constraint Type/Target.
-cells_satisfy_constraint(Cells, Type, Target) :-
-    values_from_cells(Cells, Values),
-    values_satisfy_constraint(Values, Type, Target).
+% values_for_coords(+Coords, +Cells, -Values)
+% Values are the numbers assigned to Coords in the same order.
+values_for_coords([], _, []).
+values_for_coords([Coord | CoordRest], Cells, [Value | ValueRest]) :-
+    list_contains(cell(Coord, Value), Cells),
+    values_for_coords(CoordRest, Cells, ValueRest).
 
 % values_satisfy_constraint(+Values, +Type, +Target)
-% Dispatches a region condition to the matching values predicate.
-values_satisfy_constraint(Values, empty, nil) :- no_constraint(Values).
+% True when Values satisfy the region restriction Type/Target.
+values_satisfy_constraint(_, empty, nil).
 values_satisfy_constraint(Values, equals, nil) :- all_equal_values(Values).
 values_satisfy_constraint(Values, unequal, nil) :- all_distinct_values(Values).
 values_satisfy_constraint(Values, sum, Target) :- sum_values(Values, Target).
-values_satisfy_constraint(Values, less, Target) :- values_sum_less_than(Values, Target).
-values_satisfy_constraint(Values, greater, Target) :- values_sum_greater_than(Values, Target).
-
-% cells_from_solution(+Solution, +Pieces, -Cells)
-% Converts placed pieces into cell(Coord, Value) terms.
-cells_from_solution([], [], []).
-cells_from_solution([[C1, C2] | CoordRest], [[V1, V2] | ValueRest], [cell(C1, V1), cell(C2, V2) | CellRest]) :-
-    cells_from_solution(CoordRest, ValueRest, CellRest).
+values_satisfy_constraint(Values, less, Target) :- sum_values(Values, Sum), Sum < Target.
+values_satisfy_constraint(Values, greater, Target) :- sum_values(Values, Sum), Sum > Target.
 
 % region_satisfied_by_cells(+Region, +Cells)
-% True when Cells satisfy the constraint described by Region.
+% True when the values assigned to Region's coordinates satisfy its restriction.
 region_satisfied_by_cells(region(Type, Target, Coords), Cells) :-
-    cells_for_region(region(Type, Target, Coords), Cells, RegionCells),
-    cells_satisfy_constraint(RegionCells, Type, Target).
+    values_for_coords(Coords, Cells, Values),
+    values_satisfy_constraint(Values, Type, Target).
 
 % regions_satisfied_by_cells(+Regions, +Cells)
-% True when every region in Regions is satisfied by Cells.
+% True when every region is satisfied by the current board values.
 regions_satisfied_by_cells([], _).
 regions_satisfied_by_cells([Region | RegionRest], Cells) :-
     region_satisfied_by_cells(Region, Cells),
     regions_satisfied_by_cells(RegionRest, Cells).
 
-% solucio_pips(+Regions, +Pieces, +Solution)
-% True when Solution places Pieces so that all Regions are satisfied.
+% solucio_pips(+Regions, +Pieces, ?Solution)
+% Checks or generates a Pips solution using the ordered list of Pieces.
 solucio_pips(Regions, Pieces, Solution) :-
-    cells_from_solution(Solution, Pieces, Cells),
-    not(cells_overlap(Cells)),
+    coords_from_regions(Regions, BoardCoords),
+    place_pieces(Pieces, BoardCoords, Solution, Cells),
     regions_satisfied_by_cells(Regions, Cells).
-
-% solucio_pips([region(empty, nil, [[0,0]]), region(equals, nil, [[0,1],[0,2],[1,1],[1,2]]), region(sum, 5, [[0,3]]), region(sum, 12, [[2,1],[2,2]])], [[2,2], [5,2], [2,3], [6,6]], [[[1,1],[1,2]], [[0,3],[0,2]], [[0,1],[0,0]], [[2,1],[2,2]]]).
-
-/*******************************************************/
-
-/*
-solucio_pips([region(empty, nil, [[0,0]]),
-              region(equals, nil, [[0,1],[0,2],[1,1],[1,2]]),
-              region(sum, 5, [[0,3]]),
-              region(sum, 12, [[2,1],[2,2]])],
-            [[2,2],
-             [5,2],
-             [2,3],
-             [6,6]],
-            Solucio).
-Solucio = [[[1,1],[1,2]],
-           [[0,3],[0,2]],
-           [[0,1],[0,0]],
-           [[2,1],[2,2]]].
-*/
 
 /*******************************************************/
 
